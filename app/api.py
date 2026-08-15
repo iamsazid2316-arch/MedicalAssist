@@ -1,25 +1,30 @@
 from typing import Literal
-from app.models import User
-from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from app.security import (
-    create_access_token,
-    get_current_user,
-    require_role,
-)
-from app.security import create_access_token, require_role
-from sqlalchemy.orm import Session
-from app.auth import authenticate_user, get_user_by_name, create_user
-from app.database import SessionLocal
-from typing import Literal
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.auth import authenticate_user, create_user, get_user_by_name
+from app.database import SessionLocal
+from app.models import User, Case
+from app.security import create_access_token, get_current_user, require_role
 
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     role: Literal["cadet", "doctor"]
     password: str = Field(min_length=6, max_length=100)
+class CaseCreate(BaseModel):
+    symptoms: str = Field(min_length=1, max_length=5000)
+class CaseStatusUpdate(BaseModel):
+    status: Literal[
+        "pending",
+        "reviewing",
+        "approved",
+        "rejected",
+        "emergency",
+    ]
 
 
 router = APIRouter()
@@ -118,4 +123,156 @@ def get_user(
         "user_id": user.id,
         "name": user.name,
         "role": user.role,
+    }
+@router.post("/cases")
+def create_case(
+    case_data: CaseCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = Case(
+        cadet_id=int(current_user["sub"]),
+        symptoms=case_data.symptoms,
+        status="pending",
+    )
+
+    db.add(case)
+    db.commit()
+    db.refresh(case)
+
+    return {
+        "success": True,
+        "message": "Case created successfully",
+        "case_id": case.id,
+        "status": case.status,
+    }
+@router.get("/cases")
+def get_my_cases(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    cadet_id = int(current_user["sub"])
+
+    cases = (
+        db.query(Case)
+        .filter(Case.cadet_id == cadet_id)
+        .order_by(Case.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "case_id": case.id,
+            "symptoms": case.symptoms,
+            "urgency": case.urgency,
+            "status": case.status,
+            "created_at": case.created_at,
+        }
+        for case in cases
+    ]
+@router.get("/cases/{case_id}")
+def get_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = (
+        db.query(Case)
+        .filter(
+            Case.id == case_id,
+            Case.cadet_id == int(current_user["sub"]),
+        )
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    return {
+        "case_id": case.id,
+        "symptoms": case.symptoms,
+        "urgency": case.urgency,
+        "status": case.status,
+        "created_at": case.created_at,
+    }
+@router.get("/doctor/cases")
+def get_doctor_cases(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("doctor")),
+):
+    cases = (
+        db.query(Case)
+        .order_by(Case.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "case_id": case.id,
+            "cadet_id": case.cadet_id,
+            "symptoms": case.symptoms,
+            "urgency": case.urgency,
+            "status": case.status,
+            "created_at": case.created_at,
+        }
+        for case in cases
+    ]
+@router.get("/doctor/cases/{case_id}")
+def get_doctor_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("doctor")),
+):
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id)
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    return {
+        "case_id": case.id,
+        "cadet_id": case.cadet_id,
+        "symptoms": case.symptoms,
+        "urgency": case.urgency,
+        "status": case.status,
+        "created_at": case.created_at,
+    }
+@router.patch("/doctor/cases/{case_id}/status")
+def update_case_status(
+    case_id: int,
+    status_data: CaseStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("doctor")),
+):
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id)
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    case.status = status_data.status
+
+    db.commit()
+    db.refresh(case)
+
+    return {
+        "success": True,
+        "message": "Case status updated",
+        "case_id": case.id,
+        "status": case.status,
     }
