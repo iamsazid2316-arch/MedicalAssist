@@ -39,7 +39,7 @@ def authenticate_user(
     name: str,
     password: str,
 ):
-    user = db.query(User).filter(User.name == name).first()
+    user = get_user_by_name(db, name)
 
     if user is None:
         return None
@@ -48,3 +48,5 @@ def authenticate_user(
         return None
 
     return user
+def get_user_by_name(db: Session, name: str):
+    return db.query(User).filter(User.name == name).first()
