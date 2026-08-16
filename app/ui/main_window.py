@@ -23,5 +23,5 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.cadet_dashboard)
         self.pages.addWidget(self.doctor_dashboard)
         self.pages.addWidget(self.case_view)
-
+        self.pages.setCurrentWidget(self.cadet_dashboard)
         self.setCentralWidget(self.pages)
