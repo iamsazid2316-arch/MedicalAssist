@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_user, get_user_by_name
 from app.database import SessionLocal
-from app.models import User, Case, Message, DoctorResponse
+from app.models import User, Case, Message, DoctorResponse, Notification
 from app.security import create_access_token, get_current_user, require_role
 
 
@@ -150,6 +150,23 @@ def create_case(
     db.add(case)
     db.commit()
     db.refresh(case)
+    doctors = (
+        db.query(User)
+        .filter(User.role == "doctor")
+        .all()
+    )
+
+    for doctor in doctors:
+        notification = Notification(
+            user_id=doctor.id,
+            case_id=case.id,
+            type="new_case",
+            message=f"New medical case #{case.id} is available for review.",
+        )
+
+        db.add(notification)
+
+    db.commit()
 
     return {
         "success": True,
@@ -555,6 +572,24 @@ def create_doctor_decision(
     )
 
     case.status = resulting_status
+    if decision_data.decision == "emergency":
+        emergency_notification = Notification(
+            user_id=case.cadet_id,
+            case_id=case.id,
+            type="emergency",
+            message=f"Emergency alert for case #{case.id}. Please contact the doctor immediately.",
+        )
+
+        db.add(emergency_notification)
+    if decision_data.decision in ["approve", "modify"]:
+        response_notification = Notification(
+            user_id=case.cadet_id,
+            case_id=case.id,
+            type="doctor_response",
+            message=f"Doctor has responded to case #{case.id}.",
+        )
+
+        db.add(response_notification)
 
     db.add(doctor_response)
     db.commit()
@@ -572,3 +607,26 @@ def create_doctor_decision(
         "status": case.status,
         "timestamp": doctor_response.timestamp,
     }
+@router.get("/notifications")
+def get_notifications(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.user_id == int(current_user["sub"]))
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "notification_id": notification.id,
+            "case_id": notification.case_id,
+            "type": notification.type,
+            "message": notification.message,
+            "is_read": notification.is_read,
+            "created_at": notification.created_at,
+        }
+        for notification in notifications
+    ]

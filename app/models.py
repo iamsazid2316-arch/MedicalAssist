@@ -103,3 +103,19 @@ class DoctorResponse(Base):
     doctor: Mapped["User"] = relationship(
         back_populates="doctor_responses",
     )
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), nullable=True)
+
+    type: Mapped[str] = mapped_column(String(30), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
