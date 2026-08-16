@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_user, get_user_by_name
 from app.database import SessionLocal
-from app.models import User, Case
+from app.models import User, Case, Message
 from app.security import create_access_token, get_current_user, require_role
 
 
@@ -25,6 +25,9 @@ class CaseStatusUpdate(BaseModel):
         "rejected",
         "emergency",
     ]
+
+class MessageCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=5000)
 
 
 router = APIRouter()
@@ -276,3 +279,145 @@ def update_case_status(
         "case_id": case.id,
         "status": case.status,
     }
+@router.post("/cases/{case_id}/messages")
+def create_message(
+    case_id: int,
+    message_data: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id)
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    user_id = int(current_user["sub"])
+    role = current_user.get("role")
+
+    if role == "cadet" and case.cadet_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only send messages in your own case",
+        )
+
+    if role not in {"cadet", "doctor"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid user role",
+        )
+
+    message = Message(
+        case_id=case_id,
+        sender=role,
+        message=message_data.message,
+    )
+
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    return {
+        "success": True,
+        "message_id": message.id,
+        "case_id": message.case_id,
+        "sender": message.sender,
+        "message": message.message,
+        "timestamp": message.timestamp,
+    }
+
+
+@router.get("/cases/{case_id}/messages")
+def get_case_messages(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id)
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    user_id = int(current_user["sub"])
+    role = current_user.get("role")
+
+    if role == "cadet" and case.cadet_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access messages from your own case",
+        )
+
+    if role not in {"cadet", "doctor"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid user role",
+        )
+
+    messages = (
+        db.query(Message)
+        .filter(Message.case_id == case_id)
+        .order_by(Message.timestamp.asc())
+        .all()
+    )
+
+    return [
+        {
+            "message_id": message.id,
+            "case_id": message.case_id,
+            "sender": message.sender,
+            "message": message.message,
+            "timestamp": message.timestamp,
+        }
+        for message in messages
+    ]
+@router.get("/cases/{case_id}/messages")
+def get_case_messages(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = (
+        db.query(Case)
+        .filter(
+            Case.id == case_id,
+            Case.cadet_id == int(current_user["sub"]),
+        )
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    messages = (
+        db.query(Message)
+        .filter(Message.case_id == case_id)
+        .order_by(Message.timestamp.asc())
+        .all()
+    )
+
+    return [
+        {
+            "message_id": message.id,
+            "case_id": message.case_id,
+            "sender": message.sender,
+            "message": message.message,
+            "timestamp": message.timestamp,
+        }
+        for message in messages
+    ]
