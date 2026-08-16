@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_user, get_user_by_name
 from app.database import SessionLocal
-from app.models import User, Case, Message
+from app.models import User, Case, Message, DoctorResponse
 from app.security import create_access_token, get_current_user, require_role
 
 
@@ -25,6 +25,14 @@ class CaseStatusUpdate(BaseModel):
         "rejected",
         "emergency",
     ]
+class DoctorDecisionCreate(BaseModel):
+    decision: Literal[
+        "approve",
+        "modify",
+        "reject",
+        "emergency",
+    ]
+    response: str = Field(min_length=1, max_length=10000)
 
 class MessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
@@ -208,6 +216,11 @@ def get_doctor_cases(
 ):
     cases = (
         db.query(Case)
+        .filter(
+            Case.status.in_(
+                ["pending", "reviewing", "emergency"]
+            )
+        )
         .order_by(Case.created_at.desc())
         .all()
     )
@@ -248,6 +261,15 @@ def get_doctor_case(
         "urgency": case.urgency,
         "status": case.status,
         "created_at": case.created_at,
+        "messages": [
+            {
+                "message_id": message.id,
+                "sender": message.sender,
+                "message": message.message,
+                "timestamp": message.timestamp,
+            }
+            for message in case.messages
+        ],
     }
 @router.patch("/doctor/cases/{case_id}/status")
 def update_case_status(
@@ -421,3 +443,56 @@ def get_case_messages(
         }
         for message in messages
     ]
+@router.post("/doctor/cases/{case_id}/decision")
+def create_doctor_decision(
+    case_id: int,
+    decision_data: DoctorDecisionCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("doctor")),
+):
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id)
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    decision_status = {
+        "approve": "approved",
+        "modify": "approved",
+        "reject": "rejected",
+        "emergency": "emergency",
+    }
+
+    resulting_status = decision_status[decision_data.decision]
+
+    doctor_response = DoctorResponse(
+        case_id=case.id,
+        doctor_id=int(current_user["sub"]),
+        response=decision_data.response,
+        decision=decision_data.decision,
+    )
+
+    case.status = resulting_status
+
+    db.add(doctor_response)
+    db.commit()
+    db.refresh(doctor_response)
+    db.refresh(case)
+
+    return {
+        "success": True,
+        "message": "Doctor response stored successfully",
+        "response_id": doctor_response.id,
+        "case_id": doctor_response.case_id,
+        "doctor_id": doctor_response.doctor_id,
+        "decision": doctor_response.decision,
+        "response": doctor_response.response,
+        "status": case.status,
+        "timestamp": doctor_response.timestamp,
+    }
