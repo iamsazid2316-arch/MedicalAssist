@@ -209,6 +209,82 @@ def get_case(
         "status": case.status,
         "created_at": case.created_at,
     }
+@router.get("/cases/{case_id}/status")
+def get_case_status(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = (
+        db.query(Case)
+        .filter(
+            Case.id == case_id,
+            Case.cadet_id == int(current_user["sub"]),
+        )
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    return {
+        "case_id": case.id,
+        "status": case.status,
+        "urgency": case.urgency,
+    }
+@router.get("/cases/{case_id}/response")
+def get_approved_response(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("cadet")),
+):
+    case = (
+        db.query(Case)
+        .filter(
+            Case.id == case_id,
+            Case.cadet_id == int(current_user["sub"]),
+        )
+        .first()
+    )
+
+    if case is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Case not found",
+        )
+
+    if case.status not in ["approved", "emergency"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Doctor response is not approved yet",
+        )
+
+    doctor_response = (
+        db.query(DoctorResponse)
+        .filter(
+            DoctorResponse.case_id == case.id,
+            DoctorResponse.decision.in_(["approve", "modify", "emergency"]),
+        )
+        .order_by(DoctorResponse.timestamp.desc())
+        .first()
+    )
+
+    if doctor_response is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Approved doctor response not found",
+        )
+
+    return {
+        "case_id": case.id,
+        "response_id": doctor_response.id,
+        "decision": doctor_response.decision,
+        "response": doctor_response.response,
+        "timestamp": doctor_response.timestamp,
+    }
 @router.get("/doctor/cases")
 def get_doctor_cases(
     db: Session = Depends(get_db),
