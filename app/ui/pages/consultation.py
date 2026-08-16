@@ -9,11 +9,12 @@ from PySide6.QtWidgets import (
 )
 
 
-class ConsultationScreen(QWidget):
+class Consultation(QWidget):
     def __init__(self):
         super().__init__()
 
-        main_layout = QVBoxLayout()
+        main_layout = QVBoxLayout(self)
+        main_layout.setAlignment(Qt.AlignTop)
 
         title = QLabel("Medical Consultation")
         title.setAlignment(Qt.AlignCenter)
@@ -46,6 +47,7 @@ class ConsultationScreen(QWidget):
         )
 
         self.send_button = QPushButton("Send")
+        self.send_button.clicked.connect(self.send_message)
 
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.message_input)
@@ -54,14 +56,25 @@ class ConsultationScreen(QWidget):
         main_layout.addWidget(title)
         main_layout.addWidget(chatbot_title)
         main_layout.addWidget(status_label)
+
         main_layout.addSpacing(20)
 
         main_layout.addWidget(ai_message)
         main_layout.addWidget(cadet_message)
         main_layout.addWidget(self.typing_indicator)
 
-        main_layout.addStretch()
+        main_layout.addSpacing(20)
 
         main_layout.addLayout(input_layout)
 
-        self.setLayout(main_layout)
+        self.back_button = QPushButton("Back to Cadet Dashboard")
+        main_layout.addWidget(self.back_button)
+
+    def send_message(self):
+        message = self.message_input.text().strip()
+
+        if not message:
+            return
+
+        self.message_input.clear()
+        print("Cadet:", message)

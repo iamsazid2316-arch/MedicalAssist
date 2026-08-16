@@ -1,10 +1,11 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
+
+from ..components.buttons import PrimaryButton
 
 
 class CadetDashboard(QWidget):
@@ -14,44 +15,148 @@ class CadetDashboard(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setAlignment(Qt.AlignCenter)
 
-        title = QLabel("Cadet Dashboard")
-        title.setAlignment(Qt.AlignCenter)
-
-        welcome = QLabel("Welcome to MedicalAssist")
-        welcome.setAlignment(Qt.AlignCenter)
-
-        consultation_button = QPushButton(
-            "Start Medical Consultation"
+        main_layout.setContentsMargins(
+            40, 30, 40, 30
         )
 
-        previous_cases_title = QLabel("Previous Cases")
-        previous_cases_title.setAlignment(Qt.AlignCenter)
+        main_layout.setSpacing(12)
+
+        # -------------------------------------------------
+        # Title
+        # -------------------------------------------------
+
+        title = QLabel(
+            "Cadet Dashboard"
+        )
+        title.setAlignment(
+            Qt.AlignCenter
+        )
+
+        # -------------------------------------------------
+        # Welcome Message
+        # -------------------------------------------------
+
+        welcome = QLabel(
+            "Welcome to MedicalAssist"
+        )
+        welcome.setAlignment(
+            Qt.AlignCenter
+        )
+
+        # -------------------------------------------------
+        # Consultation Button
+        # -------------------------------------------------
+
+        self.consultation_button = PrimaryButton(
+            "➜ Start Medical Consultation"
+        )
+
+        # -------------------------------------------------
+        # Previous Cases
+        # -------------------------------------------------
+
+        previous_cases_title = QLabel(
+            "Previous Cases"
+        )
+        previous_cases_title.setAlignment(
+            Qt.AlignCenter
+        )
 
         previous_cases = QLabel(
-            "No previous cases available."
+            "No previous cases available yet."
         )
-        previous_cases.setAlignment(Qt.AlignCenter)
+        previous_cases.setAlignment(
+            Qt.AlignCenter
+        )
+        previous_cases.setWordWrap(
+            True
+        )
 
-        case_status_title = QLabel("Current Case Status")
-        case_status_title.setAlignment(Qt.AlignCenter)
+        # -------------------------------------------------
+        # Current Case Status
+        # -------------------------------------------------
 
-        case_status = QLabel("No active medical case.")
-        case_status.setAlignment(Qt.AlignCenter)
+        case_status_title = QLabel(
+            "Current Case Status"
+        )
+        case_status_title.setAlignment(
+            Qt.AlignCenter
+        )
 
-        main_layout.addWidget(title)
-        main_layout.addWidget(welcome)
-        main_layout.addSpacing(20)
+        case_status = QLabel(
+            "No active medical case at the moment."
+        )
+        case_status.setAlignment(
+            Qt.AlignCenter
+        )
+        case_status.setWordWrap(
+            True
+        )
 
-        main_layout.addWidget(consultation_button)
+        # -------------------------------------------------
+        # Logout Button
+        # -------------------------------------------------
 
-        main_layout.addSpacing(30)
+        self.logout_button = PrimaryButton(
+            "↩ Logout"
+        )
 
-        main_layout.addWidget(previous_cases_title)
-        main_layout.addWidget(previous_cases)
+        # -------------------------------------------------
+        # Add Widgets
+        # -------------------------------------------------
 
-        main_layout.addSpacing(20)
+        main_layout.addWidget(
+            title
+        )
 
-        main_layout.addWidget(case_status_title)
-        main_layout.addWidget(case_status)
+        main_layout.addWidget(
+            welcome
+        )
 
-        self.setLayout(main_layout)
+        main_layout.addSpacing(
+            10
+        )
+
+        main_layout.addWidget(
+            self.consultation_button
+        )
+
+        main_layout.addSpacing(
+            20
+        )
+
+        main_layout.addWidget(
+            previous_cases_title
+        )
+
+        main_layout.addWidget(
+            previous_cases
+        )
+
+        main_layout.addSpacing(
+            10
+        )
+
+        main_layout.addWidget(
+            case_status_title
+        )
+
+        main_layout.addWidget(
+            case_status
+        )
+
+        main_layout.addSpacing(
+            20
+        )
+
+        main_layout.addWidget(
+            self.logout_button
+        )
+
+        # -------------------------------------------------
+        # Set Layout
+        # -------------------------------------------------
+
+        self.setLayout(
+            main_layout
+        )
