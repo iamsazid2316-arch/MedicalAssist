@@ -26,3 +26,12 @@ Demo accounts:
 The frontend sends the entered username and password to the real `POST /login`
 endpoint, stores the returned bearer token for later API calls, and opens the
 dashboard that matches the authenticated account role.
+
+## Run automated tests
+
+```powershell
+python -m pytest
+```
+
+The tests use an isolated in-memory database and do not change the application's
+real SQLite database.
