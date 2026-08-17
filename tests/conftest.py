@@ -1,6 +1,9 @@
 import os
 
-os.environ.setdefault("SECRET_KEY", "automated-test-secret")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "automated-test-secret-that-is-longer-than-thirty-two-bytes",
+)
 os.environ["MEDICALASSIST_DEMO_ACCOUNTS"] = "false"
 
 import pytest
