@@ -506,5 +506,4 @@ class DoctorDashboard(QWidget):
 
         self.case_summary.setText(
             self.case_summary.text()
-            + f"\n\nCurrent Status: {current_status}"
         )
