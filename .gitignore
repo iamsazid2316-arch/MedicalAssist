@@ -1,0 +1,13 @@
+# Virtual Environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+# Local secrets, database, and duplicate backend copy
+/.env
+/data/
+/MedicalAssist/
