@@ -2,6 +2,18 @@
 
 Medical assistance desktop application with a PySide6 frontend and FastAPI backend.
 
+## First-time Windows setup
+
+From PowerShell in the project folder, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+The setup script creates `.venv`, installs the packages from `requirements.txt`,
+creates a private `.env` with a random signing secret when needed, and prepares
+the local `data` directory. It keeps an existing `.env` unchanged.
+
 ## Run the integrated application
 
 Open two PowerShell windows in the project folder.
