@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app import models
@@ -7,21 +9,23 @@ from app.database import SessionLocal
 from app.demo import seed_demo_accounts
 
 
-app = FastAPI(
-    title="Medical Assistance System",
-    description="AI-assisted medical triage and doctor communication system",
-    version="0.1.0",
-)
-
-
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
         seed_demo_accounts(db)
     finally:
         db.close()
+    yield
+
+
+app = FastAPI(
+    title="Medical Assistance System",
+    description="AI-assisted medical triage and doctor communication system",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 
 app.include_router(router)
