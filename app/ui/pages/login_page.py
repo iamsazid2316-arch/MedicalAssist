@@ -1,8 +1,8 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QLabel,
     QLineEdit,
-    QComboBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -10,203 +10,92 @@ from PySide6.QtWidgets import (
 
 
 class LoginPage(QWidget):
-
-    login_successful = Signal(str)
+    login_requested = Signal(str, str, str)
 
     def __init__(self):
         super().__init__()
-
-        main_layout = QVBoxLayout()
-        main_layout.setAlignment(Qt.AlignCenter)
-
-        # =================================================
-        # TITLE
-        # =================================================
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(260, 80, 260, 80)
+        layout.setSpacing(12)
 
         title = QLabel("MedicalAssist")
+        title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignCenter)
-
-        subtitle = QLabel(
-            "Medical Assistance System"
-        )
+        subtitle = QLabel("Safe medical assistance with doctor oversight")
         subtitle.setAlignment(Qt.AlignCenter)
 
-        # =================================================
-        # USERNAME / ID
-        # =================================================
-
-        username_label = QLabel(
-            "Username / ID"
-        )
+        self.connection_label = QLabel("Checking server connection...")
+        self.connection_label.setAlignment(Qt.AlignCenter)
+        self.connection_label.setObjectName("mutedText")
 
         self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText(
-            "Enter your username or ID"
-        )
-
-        # =================================================
-        # PASSWORD
-        # =================================================
-
-        password_label = QLabel(
-            "Password"
-        )
-
+        self.username_input.setPlaceholderText("Username or ID")
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText(
-            "Enter your password"
-        )
-        self.password_input.setEchoMode(
-            QLineEdit.Password
-        )
-
-        # =================================================
-        # ROLE
-        # =================================================
-
-        role_label = QLabel("Role")
+        self.password_input.setPlaceholderText("Password")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.returnPressed.connect(self._submit)
 
         self.role_input = QComboBox()
-        self.role_input.addItems(
-            [
-                "Cadet",
-                "Doctor",
-            ]
-        )
-
-        # =================================================
-        # LOGIN BUTTON
-        # =================================================
-
-        self.login_button = QPushButton(
-            "Login"
-        )
-
-        self.login_button.clicked.connect(
-            self.handle_login
-        )
-
-        # =================================================
-        # ERROR
-        # =================================================
+        self.role_input.addItems(["Cadet", "Doctor"])
 
         self.error_label = QLabel()
-        self.error_label.setAlignment(
-            Qt.AlignCenter
-        )
-        self.error_label.setStyleSheet(
-            "color: red;"
-        )
+        self.error_label.setWordWrap(True)
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setObjectName("errorText")
         self.error_label.hide()
 
-        # =================================================
-        # LAYOUT
-        # =================================================
+        self.login_button = QPushButton("Login")
+        self.login_button.clicked.connect(self._submit)
 
-        main_layout.addWidget(title)
-        main_layout.addWidget(subtitle)
-
-        main_layout.addSpacing(20)
-
-        main_layout.addWidget(
-            username_label
+        demo_hint = QLabel(
+            "Demo: TestCadet / test123   |   TestDoctor / doctor123"
         )
-        main_layout.addWidget(
-            self.username_input
-        )
+        demo_hint.setAlignment(Qt.AlignCenter)
+        demo_hint.setObjectName("mutedText")
 
-        main_layout.addWidget(
-            password_label
-        )
-        main_layout.addWidget(
-            self.password_input
-        )
+        for widget in (
+            title,
+            subtitle,
+            self.connection_label,
+            self.username_input,
+            self.password_input,
+            self.role_input,
+            self.error_label,
+            self.login_button,
+            demo_hint,
+        ):
+            layout.addWidget(widget)
 
-        main_layout.addWidget(
-            role_label
-        )
-        main_layout.addWidget(
-            self.role_input
-        )
-
-        main_layout.addWidget(
-            self.error_label
-        )
-
-        main_layout.addSpacing(10)
-
-        main_layout.addWidget(
-            self.login_button
-        )
-
-        self.setLayout(
-            main_layout
-        )
-
-    # =====================================================
-    # LOGIN
-    # =====================================================
-
-    def handle_login(self):
-
-        username = (
-            self.username_input
-            .text()
-            .strip()
-        )
-
-        password = (
-            self.password_input
-            .text()
-            .strip()
-        )
-
-        role = (
-            self.role_input
-            .currentText()
-        )
-
-        # -------------------------------------------------
-        # Basic validation
-        # -------------------------------------------------
-
+    def _submit(self):
+        username = self.username_input.text().strip()
+        password = self.password_input.text()
         if not username or not password:
-
-            self.error_label.setText(
-                "Please enter username/ID and password."
-            )
-
-            self.error_label.show()
-
+            self.show_error("Enter both your username and password.")
             return
+        self.show_error("")
+        self.login_requested.emit(username, password, self.role_input.currentText().lower())
 
-        # -------------------------------------------------
-        # Successful frontend login
-        # -------------------------------------------------
+    def set_loading(self, loading: bool):
+        self.login_button.setDisabled(loading)
+        self.username_input.setDisabled(loading)
+        self.password_input.setDisabled(loading)
+        self.role_input.setDisabled(loading)
+        self.login_button.setText("Signing in..." if loading else "Login")
 
-        self.error_label.hide()
+    def show_error(self, message: str):
+        self.error_label.setText(message)
+        self.error_label.setVisible(bool(message))
 
-        self.login_button.setText(
-            "Logged in"
+    def set_connection(self, connected: bool):
+        self.connection_label.setText(
+            "Server connected" if connected else "Server unavailable - start the backend"
         )
+        self.connection_label.setProperty("connected", connected)
+        self.connection_label.style().unpolish(self.connection_label)
+        self.connection_label.style().polish(self.connection_label)
 
-        self.login_button.setEnabled(
-            False
-        )
-
-        self.username_input.setEnabled(
-            False
-        )
-
-        self.password_input.setEnabled(
-            False
-        )
-
-        self.role_input.setEnabled(
-            False
-        )
-
-        # Send selected role to MainWindow
-        self.login_successful.emit(
-            role
-        )
+    def reset(self):
+        self.set_loading(False)
+        self.password_input.clear()
+        self.show_error("")

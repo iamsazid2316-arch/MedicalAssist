@@ -1,320 +1,279 @@
-from PySide6.QtWidgets import QMainWindow, QStackedWidget
+from __future__ import annotations
 
-from .pages.login_page import LoginPage
-from .pages.cadet_dashboard import CadetDashboard
-from .pages.doctor_dashboard import DoctorDashboard
-from .pages.case_view import CaseView
-from .pages.consultation import Consultation
+from collections.abc import Callable
+from typing import Any
+
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
+
+from app.api_client import ApiClient, ApiError
+from app.ui.pages.cadet_dashboard import CadetDashboard
+from app.ui.pages.case_view import CaseView
+from app.ui.pages.consultation import Consultation
+from app.ui.pages.doctor_dashboard import DoctorDashboard
+from app.ui.pages.login_page import LoginPage
+
+
+class WorkerSignals(QObject):
+    success = Signal(object)
+    error = Signal(str)
+    finished = Signal()
+
+
+class ApiWorker(QRunnable):
+    def __init__(self, operation: Callable[[], Any]):
+        super().__init__()
+        self.operation = operation
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            self.signals.success.emit(self.operation())
+        except ApiError as exc:
+            self.signals.error.emit(str(exc))
+        except Exception:
+            self.signals.error.emit("An unexpected error occurred. Please try again.")
+        finally:
+            self.signals.finished.emit()
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, api_client: ApiClient | None = None):
         super().__init__()
+        self.api = api_client or ApiClient()
+        self.thread_pool = QThreadPool.globalInstance()
+        self._workers: set[ApiWorker] = set()
 
-        # -------------------------------------------------
-        # Main Window
-        # -------------------------------------------------
-
-        self.setWindowTitle(
-            "Medical Assistance System"
-        )
-
-        self.resize(
-            1100,
-            800
-        )
-
-        # -------------------------------------------------
-        # Pages
-        # -------------------------------------------------
+        self.setWindowTitle("MedicalAssist")
+        self.resize(1100, 760)
+        self.setMinimumSize(820, 600)
 
         self.pages = QStackedWidget()
-
         self.login_page = LoginPage()
         self.cadet_dashboard = CadetDashboard()
         self.doctor_dashboard = DoctorDashboard()
         self.case_view = CaseView()
         self.consultation = Consultation()
+        for page in (
+            self.login_page,
+            self.cadet_dashboard,
+            self.doctor_dashboard,
+            self.case_view,
+            self.consultation,
+        ):
+            self.pages.addWidget(page)
+        self.setCentralWidget(self.pages)
+        self.pages.setCurrentWidget(self.login_page)
 
-        # -------------------------------------------------
-        # Add Pages
-        # -------------------------------------------------
+        self.login_page.login_requested.connect(self.login)
+        self.cadet_dashboard.consultation_requested.connect(self.open_consultation)
+        self.cadet_dashboard.refresh_requested.connect(self.refresh_cadet_dashboard)
+        self.cadet_dashboard.response_requested.connect(self.show_doctor_response)
+        self.cadet_dashboard.logout_requested.connect(self.logout)
+        self.consultation.message_requested.connect(self.send_consultation_message)
+        self.consultation.back_requested.connect(self.go_to_cadet_dashboard)
+        self.doctor_dashboard.refresh_requested.connect(self.refresh_doctor_dashboard)
+        self.doctor_dashboard.case_requested.connect(self.open_doctor_case)
+        self.doctor_dashboard.logout_requested.connect(self.logout)
+        self.case_view.back_requested.connect(self.go_to_doctor_dashboard)
+        self.case_view.decision_requested.connect(self.submit_doctor_decision)
 
-        self.pages.addWidget(
-            self.login_page
+        self.statusBar().showMessage(f"API: {self.api.base_url}")
+        self._check_connection()
+
+    def _run(
+        self,
+        operation: Callable[[], Any],
+        success: Callable[[Any], None],
+        error: Callable[[str], None],
+        finished: Callable[[], None] | None = None,
+    ):
+        worker = ApiWorker(operation)
+        self._workers.add(worker)
+        worker.signals.success.connect(success)
+        worker.signals.error.connect(error)
+        if finished:
+            worker.signals.finished.connect(finished)
+        worker.signals.finished.connect(lambda: self._workers.discard(worker))
+        self.thread_pool.start(worker)
+
+    def _check_connection(self):
+        self._run(
+            self.api.health,
+            lambda _data: self._set_connected(True),
+            lambda _message: self._set_connected(False),
         )
 
-        self.pages.addWidget(
-            self.cadet_dashboard
+    def _set_connected(self, connected: bool):
+        self.login_page.set_connection(connected)
+        self.statusBar().showMessage(
+            f"{'Connected to' if connected else 'Cannot reach'} {self.api.base_url}"
         )
 
-        self.pages.addWidget(
-            self.doctor_dashboard
+    @Slot(str, str, str)
+    def login(self, username: str, password: str, expected_role: str):
+        self.login_page.set_loading(True)
+
+        def success(data: dict):
+            if data.get("role") != expected_role:
+                self.api.logout()
+                self.login_page.show_error(
+                    f"This account is registered as {data.get('role', 'another role')}."
+                )
+                return
+            name = data.get("name", username)
+            if data["role"] == "cadet":
+                self.cadet_dashboard.set_user(name)
+                self.pages.setCurrentWidget(self.cadet_dashboard)
+                self.refresh_cadet_dashboard()
+            else:
+                self.doctor_dashboard.set_user(name)
+                self.pages.setCurrentWidget(self.doctor_dashboard)
+                self.refresh_doctor_dashboard()
+
+        self._run(
+            lambda: self.api.login(username, password),
+            success,
+            self.login_page.show_error,
+            lambda: self.login_page.set_loading(False),
         )
-
-        self.pages.addWidget(
-            self.case_view
-        )
-
-        self.pages.addWidget(
-            self.consultation
-        )
-
-        self.setCentralWidget(
-            self.pages
-        )
-
-        # -------------------------------------------------
-        # Start With Login
-        # -------------------------------------------------
-
-        self.pages.setCurrentWidget(
-            self.login_page
-        )
-
-        # =================================================
-        # LOGIN
-        # =================================================
-
-        self.login_page.login_button.clicked.connect(
-            self.handle_login
-        )
-
-        # =================================================
-        # CADET DASHBOARD
-        # =================================================
-
-        self.cadet_dashboard.consultation_button.clicked.connect(
-            self.open_consultation
-        )
-
-        self.cadet_dashboard.logout_button.clicked.connect(
-            self.logout
-        )
-
-        # =================================================
-        # CONSULTATION
-        # =================================================
-
-        self.consultation.back_button.clicked.connect(
-            self.go_to_cadet_dashboard
-        )
-
-        # =================================================
-        # DOCTOR DASHBOARD
-        # =================================================
-
-        self.doctor_dashboard.review_button.clicked.connect(
-            self.open_selected_case
-        )
-
-        self.doctor_dashboard.logout_button.clicked.connect(
-            self.logout
-        )
-
-        # =================================================
-        # CASE VIEW
-        # =================================================
-
-        self.case_view.back_button.clicked.connect(
-            self.go_to_doctor_dashboard
-        )
-
-        self.case_view.approve_button.clicked.connect(
-            self.approve_case
-        )
-
-        self.case_view.reject_button.clicked.connect(
-            self.reject_case
-        )
-
-    # =====================================================
-    # LOGIN
-    # =====================================================
-
-    def handle_login(self):
-
-        role = (
-            self.login_page
-            .role_input
-            .currentText()
-        )
-
-        if role == "Cadet":
-
-            self.pages.setCurrentWidget(
-                self.cadet_dashboard
-            )
-
-        elif role == "Doctor":
-
-            self.pages.setCurrentWidget(
-                self.doctor_dashboard
-            )
-
-        # Reset Login Button
-
-        self.login_page.login_button.setText(
-            "Login"
-        )
-
-        self.login_page.login_button.setEnabled(
-            True
-        )
-
-        self.login_page.username_input.setEnabled(
-            True
-        )
-
-        self.login_page.password_input.setEnabled(
-            True
-        )
-
-        self.login_page.role_input.setEnabled(
-            True
-        )
-
-    # =====================================================
-    # LOGOUT
-    # =====================================================
 
     def logout(self):
+        self.api.logout()
+        self.login_page.reset()
+        self.pages.setCurrentWidget(self.login_page)
+        self._check_connection()
 
-        self.pages.setCurrentWidget(
-            self.login_page
+    def refresh_cadet_dashboard(self):
+        self.cadet_dashboard.set_loading(True)
+
+        def load():
+            return self.api.get_cases(), self.api.get_notifications()
+
+        def success(data: tuple[list[dict], list[dict]]):
+            cases, notifications = data
+            self.cadet_dashboard.set_cases(cases)
+            self.cadet_dashboard.set_notifications(notifications)
+
+        self._run(
+            load,
+            success,
+            self._show_dashboard_error,
+            lambda: self.cadet_dashboard.set_loading(False),
         )
 
-        # Clear login fields
-
-        self.login_page.username_input.clear()
-
-        self.login_page.password_input.clear()
-
-        # Reset role
-
-        self.login_page.role_input.setCurrentIndex(
-            0
-        )
-
-        # Reset login button
-
-        self.login_page.login_button.setText(
-            "Login"
-        )
-
-        self.login_page.login_button.setEnabled(
-            True
-        )
-
-        self.login_page.username_input.setEnabled(
-            True
-        )
-
-        self.login_page.password_input.setEnabled(
-            True
-        )
-
-        self.login_page.role_input.setEnabled(
-            True
-        )
-
-    # =====================================================
-    # CADET → CONSULTATION
-    # =====================================================
+    def _show_dashboard_error(self, message: str):
+        self.statusBar().showMessage(message)
+        QMessageBox.warning(self, "MedicalAssist", message)
 
     def open_consultation(self):
+        self.consultation.reset()
+        self.pages.setCurrentWidget(self.consultation)
 
-        self.pages.setCurrentWidget(
-            self.consultation
+    def send_consultation_message(self, message: str):
+        self.consultation.set_loading(True)
+
+        if self.consultation.case_id is None:
+            def operation():
+                created = self.api.create_case(message)
+                response = self.api.ask_assistant(created["case_id"], message)
+                return created, response
+
+            def success(result: tuple[dict, dict]):
+                created, response = result
+                self.consultation.set_case(
+                    created["case_id"], response["status"], response["urgency"]
+                )
+                self.consultation.add_message("MedicalAssist", response["message"])
+        else:
+            case_id = self.consultation.case_id
+
+            def operation():
+                return self.api.ask_assistant(case_id, message)
+
+            def success(response: dict):
+                self.consultation.set_case(
+                    response["case_id"], response["status"], response["urgency"]
+                )
+                self.consultation.add_message("MedicalAssist", response["message"])
+
+        self._run(
+            operation,
+            success,
+            self.consultation.show_error,
+            lambda: self.consultation.set_loading(False),
         )
-
-    # =====================================================
-    # CONSULTATION → CADET
-    # =====================================================
 
     def go_to_cadet_dashboard(self):
+        self.pages.setCurrentWidget(self.cadet_dashboard)
+        self.refresh_cadet_dashboard()
 
-        self.pages.setCurrentWidget(
-            self.cadet_dashboard
+    def show_doctor_response(self, case_id: int):
+        def success(data: dict):
+            title = "Emergency response" if data["decision"] == "emergency" else "Doctor response"
+            QMessageBox.information(self, title, data["response"])
+
+        self._run(
+            lambda: self.api.get_case_response(case_id),
+            success,
+            self._show_dashboard_error,
         )
 
-    # =====================================================
-    # DOCTOR → CASE VIEW
-    # =====================================================
+    def refresh_doctor_dashboard(self):
+        self.doctor_dashboard.set_loading(True)
 
-    def open_selected_case(self):
+        def load():
+            return self.api.get_doctor_cases(), self.api.get_notifications()
 
-        case_id = (
-            self.doctor_dashboard
-            .pending_cases
-            .currentText()
+        def success(data: tuple[list[dict], list[dict]]):
+            cases, notifications = data
+            self.doctor_dashboard.set_cases(cases)
+            self.doctor_dashboard.set_notifications(notifications)
+
+        self._run(
+            load,
+            success,
+            self._show_dashboard_error,
+            lambda: self.doctor_dashboard.set_loading(False),
         )
 
-        if not case_id:
-            return
+    def open_doctor_case(self, case_id: int):
+        self.doctor_dashboard.set_loading(True)
 
-        case_data = (
-            self.doctor_dashboard
-            .case_data
-            .get(case_id)
+        def success(data: dict):
+            self.case_view.load_case(data)
+            self.pages.setCurrentWidget(self.case_view)
+
+        self._run(
+            lambda: self.api.get_doctor_case(case_id),
+            success,
+            self._show_dashboard_error,
+            lambda: self.doctor_dashboard.set_loading(False),
         )
 
-        if case_data is None:
-            return
+    def submit_doctor_decision(self, case_id: int, decision: str, response: str):
+        self.case_view.set_loading(True)
 
-        self.case_view.load_case(
-            case_id,
-            case_data
+        def success(data: dict):
+            QMessageBox.information(
+                self,
+                "Decision saved",
+                f"Case #{data['case_id']} is now {data['status']}.",
+            )
+            self.go_to_doctor_dashboard()
+
+        self._run(
+            lambda: self.api.submit_doctor_decision(case_id, decision, response),
+            success,
+            self.case_view.show_error,
+            lambda: self.case_view.set_loading(False),
         )
-
-        self.pages.setCurrentWidget(
-            self.case_view
-        )
-
-    # =====================================================
-    # APPROVE CASE
-    # =====================================================
-
-    def approve_case(self):
-
-        if not hasattr(
-            self.case_view,
-            "current_case_id"
-        ):
-            return
-
-        if not self.case_view.current_case_id:
-            return
-
-        self.case_view.status.setText(
-            "Case Status: Approved"
-        )
-
-    # =====================================================
-    # REJECT CASE
-    # =====================================================
-
-    def reject_case(self):
-
-        if not hasattr(
-            self.case_view,
-            "current_case_id"
-        ):
-            return
-
-        if not self.case_view.current_case_id:
-            return
-
-        self.case_view.status.setText(
-            "Case Status: Rejected"
-        )
-
-    # =====================================================
-    # CASE VIEW → DOCTOR DASHBOARD
-    # =====================================================
 
     def go_to_doctor_dashboard(self):
+        self.pages.setCurrentWidget(self.doctor_dashboard)
+        self.refresh_doctor_dashboard()
 
-        self.pages.setCurrentWidget(
-            self.doctor_dashboard
-        )
+    def closeEvent(self, event):
+        self.api.close()
+        super().closeEvent(event)
