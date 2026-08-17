@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth import authenticate_user, create_user, get_user_by_name
+from app.auth import authenticate_user, get_user_by_name
 from app.database import SessionLocal
 from app.models import User, Case, Message, DoctorResponse, Notification
 from app.security import create_access_token, get_current_user, require_role
@@ -76,37 +76,6 @@ def login(
         "success": True,
         "message": "Login successful",
         "access_token": access_token,
-        "user_id": user.id,
-        "name": user.name,
-        "role": user.role,
-    }
-@router.post("/register")
-def register(
-    user_data: UserCreate,
-    db: Session = Depends(get_db),
-):
-
-    existing_user = get_user_by_name(
-    db,
-    user_data.name,
-)
-
-    if existing_user:
-        raise HTTPException(
-            status_code=409,
-            detail="User already exists",
-        )
-
-    user = create_user(
-        db=db,
-        name=user_data.name,
-        role=user_data.role,
-        password=user_data.password,
-    )
-
-    return {
-        "success": True,
-        "message": "User created successfully",
         "user_id": user.id,
         "name": user.name,
         "role": user.role,
